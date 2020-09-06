@@ -271,6 +271,11 @@ func connectDB() *sql.DB {
 		panic(err)
 	}
 
+	err = postgresSetup(db)
+	if err != nil {
+		panic(err)
+	}
+
 	return db
 }
 

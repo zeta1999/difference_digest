@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION f_hash(idx int, element bigint) RETURNS numeric
+CREATE OR REPLACE FUNCTION pg_temp.f_hash(idx int, element bigint) RETURNS numeric
     RETURNS NULL ON NULL INPUT
     IMMUTABLE
     LANGUAGE plpythonu
@@ -10,7 +10,7 @@ AS $$
   return (hashSeeds[idx] * inner) % 18446744073709551616
 $$; 
 
-CREATE OR REPLACE FUNCTION f_trailing_zeros(element numeric) RETURNS int
+CREATE OR REPLACE FUNCTION pg_temp.f_trailing_zeros(element numeric) RETURNS int
     RETURNS NULL ON NULL INPUT
     IMMUTABLE
     LANGUAGE plpythonu
@@ -27,21 +27,21 @@ AS $$
   return count 
 $$; 
 
-CREATE OR REPLACE FUNCTION bit_xor_sfunc(agg bigint, value bigint) RETURNS bigint
+CREATE OR REPLACE FUNCTION pg_temp.f_bit_xor_sfunc(agg bigint, value bigint) RETURNS bigint
   RETURNS NULL ON NULL INPUT
   IMMUTABLE
   LANGUAGE SQL
 AS $$
-SELECT agg # value;
+SELECT agg # value
 $$;
 
-CREATE OR REPLACE AGGREGATE bit_xor (bigint) (
-    SFUNC = bit_xor_sfunc,
+CREATE OR REPLACE AGGREGATE pg_temp.f_bit_xor (bigint) (
+    SFUNC = pg_temp.f_bit_xor_sfunc,
     STYPE = bigint,
     INITCOND = 0
 );
 
-CREATE OR REPLACE FUNCTION bit_xor_numeric_sfunc(agg numeric, value numeric) RETURNS numeric
+CREATE OR REPLACE FUNCTION pg_temp.f_bit_xor_numeric_sfunc(agg numeric, value numeric) RETURNS numeric
   RETURNS NULL ON NULL INPUT
   IMMUTABLE
   LANGUAGE plpythonu
@@ -49,38 +49,8 @@ AS $$
   return int(agg) ^ int(value)
 $$;
 
-CREATE OR REPLACE AGGREGATE bit_xor_numeric (numeric) (
-    SFUNC = bit_xor_numeric_sfunc,
+CREATE OR REPLACE AGGREGATE pg_temp.f_bit_xor_numeric (numeric) (
+    SFUNC = pg_temp.f_bit_xor_numeric_sfunc,
     STYPE = numeric,
     INITCOND = 0
 );
-
-
-
-/*
-SELECT 
-  f_trailing_zeros(f_hash(3 + 1, id)) AS estimator, 
-  f_hash(idx, id) % 80 AS cell, 
-  bit_xor(id::bigint) AS id_sum, 
-  bit_xor_numeric(f_hash(3 + 0, id)) AS hash_sum,  
-  COUNT(id) AS count
-FROM (
-    SELECT 0 AS idx, * FROM mythings UNION SELECT 1, * FROM mythings UNION SELECT 2, * FROM mythings
-  ) things 
-GROUP BY 1, 2 
-HAVING  f_trailing_zeros(f_hash(3 + 1, id)) = 0
-ORDER BY 1, 2;
-
-SELECT 
-  id, idx,
-  f_trailing_zeros(f_hash(3 + 1, id)) AS estimator, 
-  f_hash(idx, id) % 80 AS cell
-FROM (
-    SELECT 0 AS idx, * FROM mythings UNION SELECT 1, * FROM mythings UNION SELECT 2, * FROM mythings
-  ) things 
-WHERE id < 5
-ORDER BY 1, 2;
-
-SELECT i, f_hash(0, i) FROM generate_series(1,20) AS s(i);
-SELECT  f_hash(3 + 1, id), f_trailing_zeros(f_hash(3 + 1, id)) AS estimator FROM generate_series(0,12) AS s(id);
-*/

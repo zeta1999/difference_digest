@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"math"
+	"strings"
 )
 
 // Based on https://www.ics.uci.edu/~eppstein/pubs/EppGooUye-SIGCOMM-11.pdf
@@ -149,15 +151,15 @@ func EncodeIBF(size int, set map[uint64]bool) *ibf {
 
 func EncodeIBFDB(size int, db *sql.DB, table string, column string) (*ibf, error) {
 	query := `
-	SELECT 
-		f_hash(idx, %[2]s) %% %[3]d AS cell, 
-		bit_xor(%[2]s::bigint) AS id_sum, 
-		bit_xor_numeric(f_hash(3 + 0, %[2]s)) AS hash_sum,  
+	SELECT
+		pg_temp.f_hash(idx, %[2]s) %% %[3]d AS cell,
+		pg_temp.f_bit_xor(%[2]s::bigint) AS id_sum,
+		pg_temp.f_bit_xor_numeric(pg_temp.f_hash(3 + 0, %[2]s)) AS hash_sum,
 		COUNT(id) AS count
 	FROM (
-		SELECT 0 AS idx, * FROM %[1]s UNION 
+		SELECT 0 AS idx, * FROM %[1]s UNION
 		SELECT 1, * FROM %[1]s UNION
-		SELECT 2, * FROM %[1]s 
+		SELECT 2, * FROM %[1]s
 	) s
 	GROUP BY 1
 	ORDER BY 1;
@@ -293,18 +295,18 @@ func EncodeEstimator(set map[uint64]bool) *strataEstimator {
 
 func EncodeEstimatorDB(db *sql.DB, table string, column string) (*strataEstimator, error) {
 	query := `
-		SELECT 
-			f_trailing_zeros(f_hash(3 + 1, %[2]s)) AS estimator, 
-			f_hash(idx, %[2]s) %% 80 AS cell, 
-			bit_xor(%[2]s::bigint) AS id_sum, 
-			bit_xor_numeric(f_hash(3 + 0, %[2]s)) AS hash_sum,  
+		SELECT
+			pg_temp.f_trailing_zeros(pg_temp.f_hash(3 + 1, %[2]s)) AS estimator,
+			pg_temp.f_hash(idx, %[2]s) %% 80 AS cell,
+			pg_temp.f_bit_xor(%[2]s::bigint) AS id_sum,
+			pg_temp.f_bit_xor_numeric(pg_temp.f_hash(3 + 0, %[2]s)) AS hash_sum,
 			COUNT(id) AS count
 		FROM (
-			SELECT 0 AS idx, * FROM %[1]s UNION 
+			SELECT 0 AS idx, * FROM %[1]s UNION
 			SELECT 1, * FROM %[1]s UNION
-			SELECT 2, * FROM %[1]s 
+			SELECT 2, * FROM %[1]s
 		) s
-		GROUP BY 1, 2 
+		GROUP BY 1, 2
 		ORDER BY 1, 2;
 	`
 
@@ -359,4 +361,26 @@ func (estimator *strataEstimator) Decode(otherEstmator *strataEstimator) uint64 
 	}
 
 	return count
+}
+
+func postgresSetup(db *sql.DB) error {
+	file, err := ioutil.ReadFile("difference_digest.sql")
+
+	if err != nil {
+		return err
+	}
+
+	requests := strings.Split(string(file), ";")
+
+	for _, request := range requests {
+		if strings.TrimSpace(request) == "" {
+			continue
+		}
+		_, err := db.Exec(request)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
