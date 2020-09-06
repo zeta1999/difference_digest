@@ -66,34 +66,10 @@ var (
 
 	hashSeeds        = []uint64{18269989962351869307, 9143901319630896501, 2072764263930962169, 417226483919003799, 16485935163296413021}
 	mask      uint64 = 0x5555555555555555
-	// prime1    uint64 = 2147483647
-	// prime2    uint64 = 2654435761
-	// prime3    uint64 = 4638325457
-	// offset    uint64 = 4869563535558310077
 )
 
 func hash(index int, element uint64) uint64 {
-	// bs := make([]byte, 8)
-	// binary.LittleEndian.PutUint64(bs, element)
-	// hashfn := murmur3.New64WithSeed(uint32(hashSeeds[index] >> 32))
-	// hashfn.Write(bs)
-	// return hashfn.Sum64()
-
-	// h1 := ((hashSeeds[0] ^ (element)) + offset) * (prime1 * prime2)
-	// h2 := ((hashSeeds[1] ^ (element)) + offset) * (prime1 * prime3)
-	// return h1 + uint64(index+1)*h2
-
-	// inner := mask * (element ^ (element >> 32))
-	// outer := hashSeeds[index] * (inner ^ (inner >> 32))
-	// return outer
-
 	return mask * (element ^ (element >> 32)) * hashSeeds[index]
-
-	// bs := make([]byte, 9)
-	// binary.LittleEndian.PutUint64(bs, element)
-	// bs[8] = byte(index)
-	// h := md5.Sum(bs)
-	// return binary.LittleEndian.Uint64((h[:8]))
 }
 
 func hashes(element uint64) []uint64 {
