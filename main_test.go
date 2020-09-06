@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"math"
 	"math/rand"
@@ -15,10 +16,10 @@ import (
 )
 
 func TestDBComputeDifference(t *testing.T) {
-	db, err := dburl.Open("postgres://localhost/jason?sslmode=disable")
-	assert.NoError(t, err)
+	db := connectDB()
+	defer db.Close()
 
-	_, err = db.Exec("CREATE TEMP TABLE sourcethings (id bigint)")
+	_, err := db.Exec("CREATE TEMP TABLE sourcethings (id bigint)")
 	assert.NoError(t, err)
 	_, err = db.Exec("CREATE TEMP TABLE sinkthings (id bigint)")
 	assert.NoError(t, err)
@@ -60,10 +61,10 @@ func TestDBComputeDifference(t *testing.T) {
 }
 
 func TestDBInMemoryEstimatorEquivalence(t *testing.T) {
-	db, err := dburl.Open("postgres://localhost/jason?sslmode=disable")
-	assert.NoError(t, err)
+	db := connectDB()
+	defer db.Close()
 
-	_, err = db.Exec("CREATE TEMP TABLE things (id bigint)")
+	_, err := db.Exec("CREATE TEMP TABLE things (id bigint)")
 	assert.NoError(t, err)
 	_, err = db.Exec("INSERT INTO things (id) SELECT * from generate_series(1,10000)")
 	assert.NoError(t, err)
@@ -86,10 +87,10 @@ func TestDBInMemoryEstimatorEquivalence(t *testing.T) {
 }
 
 func TestDBInMemoryIBFEquivalence(t *testing.T) {
-	db, err := dburl.Open("postgres://localhost/jason?sslmode=disable")
-	assert.NoError(t, err)
+	db := connectDB()
+	defer db.Close()
 
-	_, err = db.Exec("CREATE TEMP TABLE things (id bigint)")
+	_, err := db.Exec("CREATE TEMP TABLE things (id bigint)")
 	assert.NoError(t, err)
 	_, err = db.Exec("INSERT INTO things (id) SELECT * from generate_series(1,10000)")
 	assert.NoError(t, err)
@@ -172,28 +173,24 @@ func TestInMemory(t *testing.T) {
 }
 
 func xTestHashSpread(t *testing.T) {
-	hashResults := make(map[int]uint64)
-	for i := 0; i < 10000; i++ {
-		hashResults[i] = hash(0, uint64(i))
-	}
-
-	n := 10
+	n := uint64(10)
 	bins := make(map[int]int)
-	for _, j := range hashResults {
-		bins[int(j%uint64(n))]++
+	for i := 0; i < 4294967296; i++ {
+		bins[int(hash(0, uint64(i))%n)]++
 	}
 
 	fmt.Println("Modulus bins: (should be uniformly distributed)")
 	fmt.Println(bins)
+}
 
-	sbins := make(map[int]int)
-	for i := range hashResults {
-		s := hashestimator(uint64(i))
-		sbins[s]++
+func xTestStrataEstimatorSpread(t *testing.T) {
+	bins := make(map[int]int)
+	for i := 0; i < 4294967296; i++ {
+		bins[hashestimator(uint64(i))]++
 	}
 
-	fmt.Println("Estimator bins: (should be logarithmically distributed")
-	fmt.Println(sbins)
+	fmt.Println("Estimator bins: (should be logarithmically distributed)")
+	fmt.Println(bins)
 }
 
 func BenchmarkEstimator(b *testing.B) {
@@ -214,20 +211,67 @@ func BenchmarkIBF(b *testing.B) {
 	EncodeIBF(cells, sourceSet)
 }
 
-func TestMain(t *testing.T) {
-	// for i := 1; i <= 4; i++ {
-	// 	for idx := 0; idx < 3; idx++ {
-	// 		fmt.Printf("%d | %d | %d | %d\n", i, idx, hashestimator(uint64(i)), hashes(uint64(i))[idx]%80)
-	// 	}
-	// }
-	set := makeSet(1, 10000)
-	estimator := EncodeEstimator(set)
-	for i, b := range (*estimator)[0] {
-		fmt.Printf("%d %d %d %d\n", i, b.idSum.Uint64(), b.hashSum.Uint64(), b.count)
-		if i > 33 {
-			break
+func TestSignificantInts(t *testing.T) {
+	testSetWithInt(t, 0, true)
+	testSetWithInt(t, 1, true)
+	testSetWithInt(t, int64(9223372036854775807-1), true)
+	testSetWithInt(t, uint64(18446744073709551615-1), false) // 2 ** 64 - 1 passes
+	// testSetWithInt(t, uint64(18446744073709551615), false) // 2 ** 64 fails
+	// testSetWithInt(t, -1, true) // Negative numbers are not supported
+}
+
+func testSetWithInt(t *testing.T, i interface{}, postgresSupproted bool) {
+	t.Run(fmt.Sprintf("Test Int Set with %d", i), func(t *testing.T) {
+		db := connectDB()
+		defer db.Close()
+
+		_, err := db.Exec("CREATE TEMP TABLE intset (id bigint)")
+		assert.NoError(t, err)
+		_, err = db.Exec(fmt.Sprintf("INSERT INTO intset (id) VALUES ( %d )", i))
+		if postgresSupproted {
+			assert.NoError(t, err)
+		} else {
+			assert.Error(t, err)
 		}
+		defer db.Exec("DROP TABLE intset")
+
+		dbIBF, err := EncodeIBFDB(4, db, "intset", "id")
+		assert.NoError(t, err)
+
+		set := make(map[uint64]bool)
+		switch i.(type) {
+		case int:
+			set[uint64(i.(int))] = true
+		case int64:
+			set[uint64(i.(int64))] = true
+		case uint64:
+			set[i.(uint64)] = true
+		default:
+			fmt.Printf("%T\n", i)
+			panic("AHH")
+		}
+		setIBF := EncodeIBF(4, set)
+
+		diff := setIBF.Subtract(dbIBF)
+
+		setWithoutDb, dbWithoutSet, ok := diff.Decode()
+		assert.True(t, ok)
+		if postgresSupproted {
+			assert.Empty(t, setWithoutDb)
+		} else {
+			assert.Len(t, setWithoutDb, 1)
+		}
+		assert.Empty(t, dbWithoutSet)
+	})
+}
+
+func connectDB() *sql.DB {
+	db, err := dburl.Open("postgres://localhost/jason?sslmode=disable")
+	if err != nil {
+		panic(err)
 	}
+
+	return db
 }
 
 func makeSet(min, max uint64) map[uint64]bool {
