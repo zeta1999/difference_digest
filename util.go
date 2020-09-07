@@ -5,6 +5,26 @@ import (
 	"encoding/hex"
 )
 
+type databaseDriver int
+
+const (
+	// PostgreSQL represents the PostgreSQL database
+	PostgreSQL databaseDriver = iota
+)
+
+// DatabaseType indicates which type of database to use
+var DatabaseType databaseDriver = PostgreSQL
+
+func query(name string) string {
+	var queries map[string]string
+	switch DatabaseType {
+	case PostgreSQL:
+		queries = postgresQueries
+	}
+
+	return queries[name]
+}
+
 // Todo: Private
 
 type Bitmap [8]byte

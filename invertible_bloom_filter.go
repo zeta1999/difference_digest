@@ -54,22 +54,7 @@ func NewIBF(size int) *InvertibleBloomFilter {
 // EncodeIBFDB encodes an InvertibleBloomFilter from a column in a database table;
 // currently, only PostgreSQL is supported and column mast have type BIGINT/INT8
 func EncodeIBFDB(size int, db *sql.DB, table string, column string) (*InvertibleBloomFilter, error) {
-	query := `
-	SELECT
-		pg_temp.f_hash(idx, %[2]s) %% %[3]d AS cell,
-		pg_temp.f_bit_xor(%[2]s::bigint) AS id_sum,
-		pg_temp.f_bit_xor_numeric(pg_temp.f_hash(3 + 0, %[2]s)) AS hash_sum,
-		Count(id) AS Count
-	FROM (
-		SELECT 0 AS idx, * FROM %[1]s UNION
-		SELECT 1, * FROM %[1]s UNION
-		SELECT 2, * FROM %[1]s
-	) s
-	GROUP BY 1
-	ORDER BY 1;
-`
-
-	rows, err := db.Query(fmt.Sprintf(query, table, column, size))
+	rows, err := db.Query(fmt.Sprintf(query("ibf"), table, column, size))
 	if err != nil {
 		return nil, err
 	}
