@@ -3,10 +3,7 @@ package difference_digest_test
 import (
 	"database/sql"
 	"fmt"
-	"math"
-	"math/rand"
 	"testing"
-	"time"
 
 	_ "github.com/lib/pq"
 
@@ -40,51 +37,6 @@ func TestIBFCell(t *testing.T) {
 
 	assert.False(t, cell.IsZero())
 	assert.True(t, cell.IsPure())
-}
-
-func TestDBComputeDifference(t *testing.T) {
-	db := connectDB()
-	defer db.Close()
-
-	_, err := db.Exec("CREATE TEMP TABLE sourcethings (id bigint)")
-	assert.NoError(t, err)
-	_, err = db.Exec("CREATE TEMP TABLE sinkthings (id bigint)")
-	assert.NoError(t, err)
-	_, err = db.Exec("INSERT INTO sourcethings (id) SELECT * from generate_series(1,9900)") // 100 items missing
-	assert.NoError(t, err)
-	_, err = db.Exec("INSERT INTO sinkthings (id) SELECT * from generate_series(1,10000)")
-	assert.NoError(t, err)
-
-	// 1. Use the Strata Estimator to get the approximate number of differences
-	sourceEstimator, err := difference_digest.EncodeEstimatorDB(db, "sourcethings", "id")
-	assert.NoError(t, err)
-	sinkEstimator, err := difference_digest.EncodeEstimatorDB(db, "sinkthings", "id")
-	assert.NoError(t, err)
-
-	estimatedDeletes := sinkEstimator.EstimateDifference(sourceEstimator)
-
-	assert.Less(t, int(estimatedDeletes), 150)
-	assert.Greater(t, int(estimatedDeletes), 50)
-
-	// 2. Get an IBF of the appropriate size from each source
-	alpha := 5
-	cells := int(math.Ceil(float64(estimatedDeletes) * float64(alpha)))
-	sourceIBF, err := difference_digest.EncodeIBFDB(cells, db, "sourcethings", "id")
-	assert.NoError(t, err)
-	sinkIBF, err := difference_digest.EncodeIBFDB(cells, db, "sinkthings", "id")
-	assert.NoError(t, err)
-
-	// 3. Compute the difference of the IBFs
-	diff := sinkIBF.Subtract(sourceIBF)
-
-	sinkWithoutSource, sourceWithoutSink, ok := diff.Decode()
-	assert.True(t, ok)
-	assert.Len(t, sinkWithoutSource, 100)
-	assert.Empty(t, sourceWithoutSink)
-
-	assert.Contains(t, sinkWithoutSource, uint64(9901))
-	assert.Contains(t, sinkWithoutSource, uint64(9997))
-	assert.NotContains(t, sinkWithoutSource, uint64(2))
 }
 
 func TestDBInMemoryEstimatorEquivalence(t *testing.T) {
@@ -140,65 +92,6 @@ func TestDBInMemoryIBFEquivalence(t *testing.T) {
 	assert.True(t, ok)
 	assert.Empty(t, aWithoutB)
 	assert.Empty(t, bWithoutA)
-}
-
-func TestInMemory(t *testing.T) {
-	// TODO: make an example
-	setSize := uint64(10 * 1000)
-	deleteCount := 42
-
-	sourceSet := makeSet(0, setSize)
-	sinkSet := makeSet(0, setSize)
-
-	deletes := make(map[uint64]bool)
-	s1 := rand.NewSource(time.Now().UnixNano())
-	r1 := rand.New(s1)
-	for i := 0; i < deleteCount; i++ {
-		d := uint64(r1.Int63n(int64(setSize)))
-		deletes[d] = true
-		delete(sourceSet, d)
-	}
-
-	// Sink:
-	// Sink computes an estimator and sends it to Sink
-	sinkEstimator := difference_digest.NewStrataEstimator()
-	for k := range sinkSet {
-		sinkEstimator.Add(k)
-	}
-
-	// Source:
-	// Source computes its own estimator, and then decodes it with sink's
-	sourceEstimator := difference_digest.NewStrataEstimator()
-	for k := range sourceSet {
-		sourceEstimator.Add(k)
-	}
-
-	estimatedDeletes := sinkEstimator.EstimateDifference(sourceEstimator)
-
-	alpha := 5
-	// TODO: function
-	cells := int(math.Ceil(float64(estimatedDeletes) * float64(alpha)))
-	// Source computes its IBF and sends it to sink
-	sourceIBF := difference_digest.NewIBF(cells)
-	for k := range sourceSet {
-		sourceIBF.Add(k)
-	}
-
-	// Sink:
-	// Sink computes its IBF
-	sinkIBF := difference_digest.NewIBF(sourceIBF.Size)
-	for k := range sinkSet {
-		sinkIBF.Add(k)
-	}
-
-	// Sink subtracts source's IBF from it's own
-	diff := sinkIBF.Subtract(sourceIBF)
-
-	sinkWithoutSource, _, ok := diff.Decode()
-	assert.True(t, ok)
-	assert.Len(t, sinkWithoutSource, deleteCount)
-
-	// Sink now knows which elements to delete!
 }
 
 func BenchmarkEstimator(b *testing.B) {
