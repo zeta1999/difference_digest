@@ -68,7 +68,7 @@ func Example_dbs() {
 
 In this example (if the two tables had been on separate, remote databases), downloading both sets of ~10,000,000 rows to a single host to do a row-by-row comparison would have required transferring 153MB of data.
 
-Using difference digests, the amount of data transferred is proportional to the number of differences. In this case, with 100 differences, this comparison would only require transferring only 254KB of data.
+Using difference digests, the amount of data transferred is proportional to the number of differences. In this case, with 100 differences, this comparison would require transferring only 254KB of data.
 
 In this example, difference digests reduced data transfer by 99.9%!
 
