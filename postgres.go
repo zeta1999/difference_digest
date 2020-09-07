@@ -2,12 +2,12 @@ package difference_digest
 
 import (
 	"database/sql"
-	"io/ioutil"
 	"strings"
 )
 
+// PostgresSetup creates the necessary aggregates and functions for running difference_digest SQL queries
 func PostgresSetup(db *sql.DB) error {
-	file, err := ioutil.ReadFile("difference_digest.sql")
+	file, err := Asset("difference_digest.sql")
 
 	if err != nil {
 		return err
