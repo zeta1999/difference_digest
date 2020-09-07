@@ -22,7 +22,7 @@ var postgresQueries = map[string]string{
 	"strata_estimator": `
 		SELECT
 			pg_temp.f_trailing_zeros(pg_temp.f_hash(3 + 1, %[2]s)) AS estimator,
-			pg_temp.f_hash(idx, %[2]s) %% 80 AS cell,
+			pg_temp.f_hash(idx, %[2]s) %% %[3]d AS cell,
 			pg_temp.f_bit_xor(%[2]s::bigint) AS id_sum,
 			pg_temp.f_bit_xor_numeric(pg_temp.f_hash(3 + 0, %[2]s)) AS hash_sum,
 			Count(%[2]s) AS Count
@@ -37,7 +37,7 @@ var postgresQueries = map[string]string{
 
 // PostgresSetup creates the necessary aggregates and functions for running difference_digest SQL queries in PostgreSQL
 func PostgresSetup(db *sql.DB) error {
-	file, err := Asset("difference_digest_postgres.sql")
+	file, err := Asset("udfs/postgres.sql")
 
 	if err != nil {
 		return err

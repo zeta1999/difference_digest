@@ -10,6 +10,8 @@ type databaseDriver int
 const (
 	// PostgreSQL represents the PostgreSQL database
 	PostgreSQL databaseDriver = iota
+	// Snowflake represents the Snowflake database
+	Snowflake
 )
 
 // DatabaseType indicates which type of database to use
@@ -20,6 +22,8 @@ func query(name string) string {
 	switch DatabaseType {
 	case PostgreSQL:
 		queries = postgresQueries
+	case Snowflake:
+		queries = snowflakeQueries
 	}
 
 	return queries[name]

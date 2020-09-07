@@ -54,7 +54,7 @@ func (se *StrataEstimator) EstimateDifference(se2 *StrataEstimator) uint64 {
 
 // EncodeEstimatorDB queries a PostgreSQL database and returns a StrataEstimator for the specified table and column
 func EncodeEstimatorDB(db *sql.DB, table string, column string) (*StrataEstimator, error) {
-	rows, err := db.Query(fmt.Sprintf(query("strata_estimator"), table, column))
+	rows, err := db.Query(fmt.Sprintf(query("strata_estimator"), table, column, cellsCount))
 	if err != nil {
 		return nil, err
 	}
