@@ -1,11 +1,10 @@
-package main
+package difference_digest_test
 
 import (
 	"database/sql"
 	"fmt"
 	"math"
 	"math/rand"
-	"runtime"
 	"testing"
 	"time"
 
@@ -13,7 +12,35 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/xo/dburl"
+
+	"github.com/hundredwatt/difference_digest"
 )
+
+func TestIBFCell(t *testing.T) {
+	s1 := uint64(12345)
+	s2 := uint64(98765)
+	cell := difference_digest.IBFCell{}
+
+	assert.True(t, cell.IsZero())
+	assert.False(t, cell.IsPure())
+
+	cell.Insert(s1)
+
+	assert.False(t, cell.IsZero())
+	assert.True(t, cell.IsPure())
+
+	cell.Insert(s2)
+
+	assert.False(t, cell.IsZero())
+	assert.False(t, cell.IsPure())
+
+	cell2 := difference_digest.IBFCell{}
+	cell2.Insert(s2)
+	cell.Subtract(&cell2)
+
+	assert.False(t, cell.IsZero())
+	assert.True(t, cell.IsPure())
+}
 
 func TestDBComputeDifference(t *testing.T) {
 	db := connectDB()
@@ -29,12 +56,12 @@ func TestDBComputeDifference(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 1. Use the Strata Estimator to get the approximate number of differences
-	sourceEstimator, err := EncodeEstimatorDB(db, "sourcethings", "id")
+	sourceEstimator, err := difference_digest.EncodeEstimatorDB(db, "sourcethings", "id")
 	assert.NoError(t, err)
-	sinkEstimator, err := EncodeEstimatorDB(db, "sinkthings", "id")
+	sinkEstimator, err := difference_digest.EncodeEstimatorDB(db, "sinkthings", "id")
 	assert.NoError(t, err)
 
-	estimatedDeletes := sinkEstimator.Decode(sourceEstimator)
+	estimatedDeletes := sinkEstimator.EstimateDifference(sourceEstimator)
 
 	assert.Less(t, int(estimatedDeletes), 150)
 	assert.Greater(t, int(estimatedDeletes), 50)
@@ -42,9 +69,9 @@ func TestDBComputeDifference(t *testing.T) {
 	// 2. Get an IBF of the appropriate size from each source
 	alpha := 5
 	cells := int(math.Ceil(float64(estimatedDeletes) * float64(alpha)))
-	sourceIBF, err := EncodeIBFDB(cells, db, "sourcethings", "id")
+	sourceIBF, err := difference_digest.EncodeIBFDB(cells, db, "sourcethings", "id")
 	assert.NoError(t, err)
-	sinkIBF, err := EncodeIBFDB(cells, db, "sinkthings", "id")
+	sinkIBF, err := difference_digest.EncodeIBFDB(cells, db, "sinkthings", "id")
 	assert.NoError(t, err)
 
 	// 3. Compute the difference of the IBFs
@@ -69,16 +96,19 @@ func TestDBInMemoryEstimatorEquivalence(t *testing.T) {
 	_, err = db.Exec("INSERT INTO things (id) SELECT * from generate_series(1,10000)")
 	assert.NoError(t, err)
 
-	dbEstimator, err := EncodeEstimatorDB(db, "things", "id")
+	dbEstimator, err := difference_digest.EncodeEstimatorDB(db, "things", "id")
 	assert.NoError(t, err)
 
 	set := makeSet(1, 10000)
-	inMemoryEstimator := EncodeEstimator(set)
+	inMemoryEstimator := difference_digest.NewStrataEstimator()
+	for k := range set {
+		inMemoryEstimator.Add(k)
+	}
 
-	assert.Equal(t, 0, int(inMemoryEstimator.Decode(dbEstimator)))
+	assert.Equal(t, 0, int(inMemoryEstimator.EstimateDifference(dbEstimator)))
 
-	for i := range *inMemoryEstimator {
-		diff := (*dbEstimator)[i].Subtract(&(*inMemoryEstimator)[i])
+	for i := range inMemoryEstimator.Stratum {
+		diff := dbEstimator.Stratum[i].Subtract(&inMemoryEstimator.Stratum[i])
 		aWithoutB, bWithoutA, ok := diff.Decode()
 		assert.True(t, ok)
 		assert.Empty(t, aWithoutB)
@@ -95,11 +125,14 @@ func TestDBInMemoryIBFEquivalence(t *testing.T) {
 	_, err = db.Exec("INSERT INTO things (id) SELECT * from generate_series(1,10000)")
 	assert.NoError(t, err)
 
-	dbIBF, err := EncodeIBFDB(10, db, "things", "id")
+	dbIBF, err := difference_digest.EncodeIBFDB(10, db, "things", "id")
 	assert.NoError(t, err)
 
 	set := makeSet(1, 10000)
-	setIBF := EncodeIBF(10, set)
+	setIBF := difference_digest.NewIBF(10)
+	for k := range set {
+		setIBF.Add(k)
+	}
 
 	diff := dbIBF.Subtract(setIBF)
 
@@ -110,9 +143,8 @@ func TestDBInMemoryIBFEquivalence(t *testing.T) {
 }
 
 func TestInMemory(t *testing.T) {
-
-	fmt.Println("Generating data...")
-	setSize := uint64(1 * 1000 * 1000)
+	// TODO: make an example
+	setSize := uint64(10 * 1000)
 	deleteCount := 42
 
 	sourceSet := makeSet(0, setSize)
@@ -126,77 +158,56 @@ func TestInMemory(t *testing.T) {
 		deletes[d] = true
 		delete(sourceSet, d)
 	}
-	fmt.Println(len(deletes))
 
-	fmt.Println("Generating estimators...")
 	// Sink:
 	// Sink computes an estimator and sends it to Sink
-	PrintMemUsage()
-	sinkEstimator := EncodeEstimator(sinkSet)
-	PrintMemUsage()
+	sinkEstimator := difference_digest.NewStrataEstimator()
+	for k := range sinkSet {
+		sinkEstimator.Add(k)
+	}
 
 	// Source:
 	// Source computes its own estimator, and then decodes it with sink's
-	sourceEstimator := EncodeEstimator(sourceSet)
-	PrintMemUsage()
+	sourceEstimator := difference_digest.NewStrataEstimator()
+	for k := range sourceSet {
+		sourceEstimator.Add(k)
+	}
 
-	estimatedDeletes := sinkEstimator.Decode(sourceEstimator)
-	fmt.Println(estimatedDeletes)
+	estimatedDeletes := sinkEstimator.EstimateDifference(sourceEstimator)
 
-	fmt.Println("Generating IBFs...")
-	PrintMemUsage()
 	alpha := 5
+	// TODO: function
 	cells := int(math.Ceil(float64(estimatedDeletes) * float64(alpha)))
 	// Source computes its IBF and sends it to sink
-	sourceIBF := EncodeIBF(cells, sourceSet)
-	PrintMemUsage()
+	sourceIBF := difference_digest.NewIBF(cells)
+	for k := range sourceSet {
+		sourceIBF.Add(k)
+	}
 
 	// Sink:
 	// Sink computes its IBF
-	sinkIBF := EncodeIBF(len(*sourceIBF), sinkSet)
-	PrintMemUsage()
+	sinkIBF := difference_digest.NewIBF(sourceIBF.Size)
+	for k := range sinkSet {
+		sinkIBF.Add(k)
+	}
 
 	// Sink subtracts source's IBF from it's own
 	diff := sinkIBF.Subtract(sourceIBF)
-	PrintMemUsage()
 
 	sinkWithoutSource, _, ok := diff.Decode()
-	if !ok {
-		// Retry the process again with different hashses
-		fmt.Println("FAIL")
-		fmt.Println(len(sinkWithoutSource))
-	} else {
-		fmt.Println(len(sinkWithoutSource))
-	}
+	assert.True(t, ok)
+	assert.Len(t, sinkWithoutSource, deleteCount)
 
 	// Sink now knows which elements to delete!
-}
-
-func xTestHashSpread(t *testing.T) {
-	n := uint64(10)
-	bins := make(map[int]int)
-	for i := 0; i < 4294967296; i++ {
-		bins[int(hash(0, uint64(i))%n)]++
-	}
-
-	fmt.Println("Modulus bins: (should be uniformly distributed)")
-	fmt.Println(bins)
-}
-
-func xTestStrataEstimatorSpread(t *testing.T) {
-	bins := make(map[int]int)
-	for i := 0; i < 4294967296; i++ {
-		bins[hashestimator(uint64(i))]++
-	}
-
-	fmt.Println("Estimator bins: (should be logarithmically distributed)")
-	fmt.Println(bins)
 }
 
 func BenchmarkEstimator(b *testing.B) {
 	setSize := uint64(1 * 1000 * 1000)
 	set := makeSet(0, setSize)
-	EncodeEstimator(set)
+	se := difference_digest.NewStrataEstimator()
+	for k := range set {
+		se.Add(k)
+	}
 }
 
 func BenchmarkIBF(b *testing.B) {
@@ -208,7 +219,10 @@ func BenchmarkIBF(b *testing.B) {
 	alpha := 5
 	cells := deleteCount * alpha
 
-	EncodeIBF(cells, sourceSet)
+	ibf := difference_digest.NewIBF(cells)
+	for k := range sourceSet {
+		ibf.Add(k)
+	}
 }
 
 func TestSignificantInts(t *testing.T) {
@@ -235,7 +249,7 @@ func testSetWithInt(t *testing.T, i interface{}, postgresSupproted bool) {
 		}
 		defer db.Exec("DROP TABLE intset")
 
-		dbIBF, err := EncodeIBFDB(4, db, "intset", "id")
+		dbIBF, err := difference_digest.EncodeIBFDB(4, db, "intset", "id")
 		assert.NoError(t, err)
 
 		set := make(map[uint64]bool)
@@ -250,7 +264,10 @@ func testSetWithInt(t *testing.T, i interface{}, postgresSupproted bool) {
 			fmt.Printf("%T\n", i)
 			panic("AHH")
 		}
-		setIBF := EncodeIBF(4, set)
+		setIBF := difference_digest.NewIBF(4)
+		for k := range set {
+			setIBF.Add(k)
+		}
 
 		diff := setIBF.Subtract(dbIBF)
 
@@ -266,12 +283,13 @@ func testSetWithInt(t *testing.T, i interface{}, postgresSupproted bool) {
 }
 
 func connectDB() *sql.DB {
+	// TODO: use docker-compose
 	db, err := dburl.Open("postgres://localhost/jason?sslmode=disable")
 	if err != nil {
 		panic(err)
 	}
 
-	err = postgresSetup(db)
+	err = difference_digest.PostgresSetup(db)
 	if err != nil {
 		panic(err)
 	}
@@ -291,18 +309,4 @@ func makeSet(min, max uint64) map[uint64]bool {
 		i++
 	}
 	return a
-}
-
-func PrintMemUsage() {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
-	fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc))
-	fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
-	fmt.Printf("\tSys = %v MiB", bToMb(m.Sys))
-	fmt.Printf("\tNumGC = %v\n", m.NumGC)
-}
-
-func bToMb(b uint64) uint64 {
-	return b / 1024 / 1024
 }
