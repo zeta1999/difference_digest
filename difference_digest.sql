@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS plpythonu;
+
 CREATE OR REPLACE FUNCTION pg_temp.f_hash(idx int, element bigint) RETURNS numeric
     RETURNS NULL ON NULL INPUT
     IMMUTABLE
@@ -35,7 +37,7 @@ AS $$
 SELECT agg # value
 $$;
 
-CREATE OR REPLACE AGGREGATE pg_temp.f_bit_xor (bigint) (
+CREATE AGGREGATE pg_temp.f_bit_xor (bigint) (
     SFUNC = pg_temp.f_bit_xor_sfunc,
     STYPE = bigint,
     INITCOND = 0
@@ -49,7 +51,7 @@ AS $$
   return int(agg) ^ int(value)
 $$;
 
-CREATE OR REPLACE AGGREGATE pg_temp.f_bit_xor_numeric (numeric) (
+CREATE AGGREGATE pg_temp.f_bit_xor_numeric (numeric) (
     SFUNC = pg_temp.f_bit_xor_numeric_sfunc,
     STYPE = numeric,
     INITCOND = 0

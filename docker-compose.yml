@@ -1,0 +1,8 @@
+version: "3.7"
+services:
+  postgres:
+    image: ddmal/postgres-plpython:1.0
+    container_name: difference-digest-test-postgres
+    restart: always
+    ports:
+      - 127.0.0.1:45432:5432

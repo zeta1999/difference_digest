@@ -177,7 +177,7 @@ func testSetWithInt(t *testing.T, i interface{}, postgresSupproted bool) {
 
 func connectDB() *sql.DB {
 	// TODO: use docker-compose
-	db, err := dburl.Open("postgres://localhost/jason?sslmode=disable")
+	db, err := dburl.Open("postgres://postgres@localhost:45432?sslmode=disable")
 	if err != nil {
 		panic(err)
 	}

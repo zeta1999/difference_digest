@@ -10,10 +10,8 @@ import (
 type InvertibleBloomFilter struct {
 	Cells []IBFCell
 	Size  int
-	//TODO: HashCount int
 }
 
-// TODO: Private?
 // IBFCell represents one cell of an Invertible Bloom Filter
 type IBFCell struct {
 	IDSum   Bitmap
