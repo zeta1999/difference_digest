@@ -84,3 +84,9 @@ GoDocs [https://godoc.org/github.com/hundredwatt/difference_digest](https://godo
 docker-compose up
 go test -v
 ```
+
+## Changelog
+
+### HEAD
+* Added supported for the Snowflake database
+* Modify hashes to return 32-bit values (originally was 64-bit)
