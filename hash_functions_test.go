@@ -3,6 +3,8 @@ package difference_digest
 import (
 	"fmt"
 	"testing"
+
+	_ "github.com/snowflakedb/gosnowflake"
 )
 
 func xTestHashSpread(t *testing.T) {

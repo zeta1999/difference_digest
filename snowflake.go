@@ -62,7 +62,6 @@ func SnowflakeSetup(db *sql.DB) error {
 func SnowflakeCleanup(db *sql.DB) error {
 	queries := []string{
 		"DROP FUNCTION F_DD_HASH(INT, BIGINT)",
-		"DROP FUNCTION F_DD_64BIT_MULTIPLY(BIGINT, BIGINT)",
 		"DROP FUNCTION F_DD_TRAILING_ZEROS(FLOAT)",
 	}
 

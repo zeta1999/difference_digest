@@ -9,8 +9,8 @@ var postgresQueries = map[string]string{
 	"ibf": `
 		SELECT
 			pg_temp.f_hash(idx, %[2]s) %% %[3]d AS cell,
-			pg_temp.f_bit_xor(%[2]s::bigint) AS id_sum,
-			pg_temp.f_bit_xor_numeric(pg_temp.f_hash(3 + 0, %[2]s)) AS hash_sum,
+			pg_temp.f_bit_xor(%[2]s) AS id_sum,
+			pg_temp.f_bit_xor(pg_temp.f_hash(3 + 0, %[2]s)) AS hash_sum,
 			Count(%[2]s) AS Count
 		FROM (
 			SELECT 0 AS idx, * FROM %[1]s UNION
@@ -23,8 +23,8 @@ var postgresQueries = map[string]string{
 		SELECT
 			pg_temp.f_trailing_zeros(pg_temp.f_hash(3 + 1, %[2]s)) AS estimator,
 			pg_temp.f_hash(idx, %[2]s) %% %[3]d AS cell,
-			pg_temp.f_bit_xor(%[2]s::bigint) AS id_sum,
-			pg_temp.f_bit_xor_numeric(pg_temp.f_hash(3 + 0, %[2]s)) AS hash_sum,
+			pg_temp.f_bit_xor(%[2]s) AS id_sum,
+			pg_temp.f_bit_xor(pg_temp.f_hash(3 + 0, %[2]s)) AS hash_sum,
 			Count(%[2]s) AS Count
 		FROM (
 			SELECT 0 AS idx, * FROM %[1]s UNION

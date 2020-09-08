@@ -1,8 +1,8 @@
 package difference_digest
 
 var (
-	hashSeeds         = []uint64{18269989962351869307, 9143901319630896501, 2072764263930962169, 417226483919003799, 16485935163296413021}
-	multiplier uint64 = 0x5555555555555555
+	hashSeeds         = []uint64{1826998997, 914390139, 207279169, 4179003799, 1648963021}
+	multiplier uint64 = 0x555555555555
 )
 
 func indiciesHashes(element uint64) []uint64 {
@@ -34,5 +34,5 @@ func estimatorHash(element uint64) int {
 }
 
 func hash(index int, element uint64) uint64 {
-	return multiplier * (element ^ (element >> 32)) * hashSeeds[index]
+	return (multiplier * (element ^ (element >> 32)) * hashSeeds[index]) % 4294967296
 }
